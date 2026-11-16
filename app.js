@@ -65,9 +65,29 @@ function setTokenKey(key) {
 }
 
 function getToken() {
-    const base = getTokenBase();
-    const key = getTokenKey();
+    const base = getTokenBase().replace(/\s+/g, '');
+    let key = getTokenKey().replace(/\s+/g, '');
+
+    // If key itself is a full token (user entered/pasted full token into prompt)
+    if (key.startsWith('github_pat_') || key.startsWith('ghp_')) {
+        return key;
+    }
+
+    // If base itself is already a full token
+    if ((base.startsWith('github_pat_') && base.length >= 90) ||
+        (base.startsWith('ghp_') && base.length >= 40)) {
+        return base;
+    }
+
     if (!base || !key) return '';
+
+    // If key has extra characters (e.g. user entered more than 6), trim appropriately
+    if (base.startsWith('github_pat_') && base.length === 87 && key.length > 6) {
+        key = key.slice(-6);
+    } else if (base.startsWith('ghp_') && base.length === 34 && key.length > 6) {
+        key = key.slice(-6);
+    }
+
     return base + key;
 }
 
@@ -133,7 +153,7 @@ function cacheDom() {
         // Settings Modal
         'settings-modal', 'btn-close-settings',
         'settings-suffix-input', 'btn-toggle-settings-suffix',
-        'btn-save-settings', 'btn-lock-app',
+        'btn-save-settings', 'btn-lock-app', 'btn-test-connection',
         'loading-overlay', 'loader-text', 'toast'
     ];
     ids.forEach(id => {
@@ -169,9 +189,12 @@ function encodePath(path) {
 
 function githubHeaders(accept = 'application/vnd.github.v3+json') {
     const token = getToken();
-    const headers = { 'Accept': accept };
+    const headers = {
+        'Accept': accept,
+        'X-GitHub-Api-Version': '2022-11-28'
+    };
     if (token) {
-        headers['Authorization'] = token.startsWith('github_pat_') ? `Bearer ${token}` : `token ${token}`;
+        headers['Authorization'] = `Bearer ${token}`;
     }
     return headers;
 }
@@ -180,35 +203,69 @@ async function fetchGitHub(path) {
     const token = getToken();
     if (!token) {
         promptForAuth();
-        throw new Error('No GitHub token configured');
+        throw new Error('Please enter your 6-character access key');
     }
-    const url = `${API_BASE}/${encodePath(path)}?ref=${CONFIG.branch}`;
-    const resp = await fetch(url, { headers: githubHeaders() });
+
+    const branchParam = CONFIG.branch ? `?ref=${encodeURIComponent(CONFIG.branch)}` : '';
+    let url = `${API_BASE}/${encodePath(path)}${branchParam}`;
+    let resp;
+    try {
+        resp = await fetch(url, { headers: githubHeaders() });
+    } catch (netErr) {
+        showToast('Network error: Cannot reach GitHub API');
+        throw netErr;
+    }
+
+    // If 404 with branch, fallback to repository default branch
+    if (resp.status === 404 && CONFIG.branch) {
+        try {
+            const fallbackResp = await fetch(`${API_BASE}/${encodePath(path)}`, { headers: githubHeaders() });
+            if (fallbackResp.ok) {
+                return fallbackResp.json();
+            }
+        } catch (_) {}
+    }
+
     if (resp.status === 401) {
-        showToast('Token Error: 401 Bad Credentials 🔑');
+        showToast('Token Error: 401 Bad Credentials (Check 6-char key)');
         promptForAuth();
-        throw new Error('401 Unauthorized');
+        throw new Error('401 Unauthorized: Invalid token or 6-char key');
     }
     if (resp.status === 403) {
-        showToast('Token Error: 403 Lacks Contents Read Permission ⚠️');
-        throw new Error('403 Forbidden');
+        showToast('Token Error: 403 Forbidden (Check Contents Read permission)');
+        throw new Error('403 Forbidden: Token lacks Contents Read permission');
+    }
+    if (resp.status === 404) {
+        showToast('Repo Error: 404 Not Found (Grant token access to NLCD-0/CLOUD)');
+        throw new Error(`404 Not Found: Cannot access ${CONFIG.owner}/${CONFIG.repo}`);
     }
     if (!resp.ok) {
+        showToast(`GitHub Error: ${resp.status}`);
         throw new Error(`GitHub API error ${resp.status}`);
     }
     return resp.json();
 }
 
 async function fetchRawBlob(path) {
-    const url = `${API_BASE}/${encodePath(path)}?ref=${CONFIG.branch}`;
-    const resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    const branchParam = CONFIG.branch ? `?ref=${encodeURIComponent(CONFIG.branch)}` : '';
+    let url = `${API_BASE}/${encodePath(path)}${branchParam}`;
+    let resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    if (resp.status === 404 && CONFIG.branch) {
+        url = `${API_BASE}/${encodePath(path)}`;
+        resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    }
     if (!resp.ok) throw new Error(`Fetch error: ${resp.status}`);
     return resp.blob();
 }
 
 async function fetchRawText(path) {
-    const url = `${API_BASE}/${encodePath(path)}?ref=${CONFIG.branch}`;
-    const resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    const branchParam = CONFIG.branch ? `?ref=${encodeURIComponent(CONFIG.branch)}` : '';
+    let url = `${API_BASE}/${encodePath(path)}${branchParam}`;
+    let resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    if (resp.status === 404 && CONFIG.branch) {
+        url = `${API_BASE}/${encodePath(path)}`;
+        resp = await fetch(url, { headers: githubHeaders('application/vnd.github.v3.raw') });
+    }
     if (!resp.ok) throw new Error(`Fetch error: ${resp.status}`);
     return resp.text();
 }
@@ -852,7 +909,9 @@ async function openFolder(folderPath) {
         }
     } catch (err) {
         hideLoading();
-        showToast('Error loading folder');
+        if (!dom.toast?.classList.contains('visible')) {
+            showToast(err.message || 'Error loading folder');
+        }
         console.error(err);
     }
 }
@@ -1854,7 +1913,7 @@ function closeUnlockModal() {
     }
 }
 
-function submitUnlockKey() {
+async function submitUnlockKey() {
     const input = dom['unlock-key-input'];
     const key = (input ? input.value : '').trim();
     if (!key) {
@@ -1864,10 +1923,32 @@ function submitUnlockKey() {
     }
     setTokenKey(key);
     closeUnlockModal();
-    showToast('Library Unlocked! ✓');
-    renderLibraryHome();
-    renderContinueReadingShelf();
-    updateLogCountBadge();
+    showLoading('Verifying access...');
+    try {
+        await fetchGitHub(CONFIG.rootFolders[0].path);
+        hideLoading();
+        showToast('Library Unlocked! ✓');
+        renderLibraryHome();
+        renderContinueReadingShelf();
+        updateLogCountBadge();
+    } catch (err) {
+        hideLoading();
+        // Error toast is already displayed with exact message
+    }
+}
+
+async function testConnection() {
+    const key = dom['settings-suffix-input'] ? dom['settings-suffix-input'].value.trim() : '';
+    if (key) setTokenKey(key);
+    showLoading('Testing connection to NLCD-0/CLOUD...');
+    try {
+        await fetchGitHub(CONFIG.rootFolders[0].path);
+        hideLoading();
+        showToast('Connection Successful! ✓');
+    } catch (err) {
+        hideLoading();
+        // Error toast is already displayed with exact message
+    }
 }
 
 function openSettingsModal() {
@@ -1973,6 +2054,7 @@ function initEventListeners() {
     setupPasswordToggle(dom['settings-suffix-input'], dom['btn-toggle-settings-suffix']);
     if (dom['btn-save-settings']) dom['btn-save-settings'].addEventListener('click', handleSaveSettings);
     if (dom['btn-lock-app']) dom['btn-lock-app'].addEventListener('click', handleLockApp);
+    if (dom['btn-test-connection']) dom['btn-test-connection'].addEventListener('click', testConnection);
 
     // Navigation Back Buttons
     dom['btn-back-log-to-library'].addEventListener('click', () => {

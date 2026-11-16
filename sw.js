@@ -1,5 +1,5 @@
 // Service Worker — Cache app shell only, NOT PDFs or API calls
-const CACHE_NAME = 'cloudreader-v12';
+const CACHE_NAME = 'cloudreader-v13';
 const SHELL_ASSETS = [
     './',
     './index.html',
