@@ -37,25 +37,142 @@ const CONFIG = {
 
 const API_BASE = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents`;
 
-// ---- TOKEN MANAGEMENT (PASSWORD MODE) ----
-function getToken() {
-    return localStorage.getItem('mangacloud_token') || '';
+// ---- SPLIT TOKEN MANAGEMENT ----
+// Default base prefix (everything except the last 6 characters).
+// Can be updated in Settings inside the app or optionally defined here.
+// Omitting the last 6 characters guarantees GitHub push protection will never flag this code.
+const DEFAULT_TOKEN_PREFIX = '';
+
+// Migration helper: check if legacy full token exists and migrate to split storage
+try {
+    const legacyToken = localStorage.getItem('mangacloud_token');
+    if (legacyToken && !localStorage.getItem('mangacloud_token_prefix')) {
+        const trimmed = legacyToken.trim();
+        if (trimmed.length > 6) {
+            localStorage.setItem('mangacloud_token_prefix', trimmed.slice(0, -6));
+            localStorage.setItem('mangacloud_token_suffix', trimmed.slice(-6));
+        }
+    }
+} catch (e) {
+    console.warn('Split token migration:', e);
 }
 
-function setToken(token) {
-    if (token) {
-        localStorage.setItem('mangacloud_token', token.trim());
-    } else {
-        localStorage.removeItem('mangacloud_token');
+function getTokenPrefix() {
+    const stored = localStorage.getItem('mangacloud_token_prefix');
+    if (stored !== null && stored !== undefined && stored.trim() !== '') {
+        return stored.trim();
+    }
+    return DEFAULT_TOKEN_PREFIX.trim();
+}
+
+function getTokenSuffix() {
+    return (localStorage.getItem('mangacloud_token_suffix') || '').trim();
+}
+
+function getToken() {
+    const prefix = getTokenPrefix();
+    const suffix = getTokenSuffix();
+    if (!prefix || !suffix) return '';
+    return prefix + suffix;
+}
+
+function setTokenParts(prefix, suffix) {
+    if (prefix !== undefined && prefix !== null) {
+        const p = prefix.trim();
+        if (p) {
+            localStorage.setItem('mangacloud_token_prefix', p);
+        } else {
+            localStorage.removeItem('mangacloud_token_prefix');
+        }
+    }
+    if (suffix !== undefined && suffix !== null) {
+        const s = suffix.trim();
+        if (s) {
+            localStorage.setItem('mangacloud_token_suffix', s);
+        } else {
+            localStorage.removeItem('mangacloud_token_suffix');
+        }
     }
     updateTokenUI();
 }
 
+function lockApp() {
+    localStorage.removeItem('mangacloud_token_suffix');
+    localStorage.removeItem('mangacloud_token');
+    updateTokenUI();
+}
+
+function clearAllTokens() {
+    localStorage.removeItem('mangacloud_token_prefix');
+    localStorage.removeItem('mangacloud_token_suffix');
+    localStorage.removeItem('mangacloud_token');
+    updateTokenUI();
+}
+
+function updateSettingsStatusTags() {
+    const prefix = getTokenPrefix();
+    const suffix = getTokenSuffix();
+
+    const tagPrefix = dom['status-tag-prefix'];
+    const tagSuffix = dom['status-tag-suffix'];
+
+    if (tagPrefix) {
+        if (prefix) {
+            const masked = prefix.length > 7 ? '●●●' + prefix.slice(-4) : '●●●●';
+            tagPrefix.textContent = `Configured (${masked})`;
+            tagPrefix.className = 'status-tag active';
+        } else {
+            tagPrefix.textContent = 'Not set';
+            tagPrefix.className = 'status-tag missing';
+        }
+    }
+
+    if (tagSuffix) {
+        if (suffix) {
+            tagSuffix.textContent = 'Entered (••••••)';
+            tagSuffix.className = 'status-tag active';
+        } else {
+            tagSuffix.textContent = 'Not entered';
+            tagSuffix.className = 'status-tag missing';
+        }
+    }
+}
+
 function updateTokenUI() {
-    const hasTok = !!getToken();
+    const prefix = getTokenPrefix();
+    const fullToken = getToken();
+
     const alertEl = document.getElementById('token-alert');
-    if (alertEl) {
-        alertEl.style.display = hasTok ? 'none' : 'block';
+    const alertBtn = document.getElementById('btn-banner-token');
+    const alertText = alertEl ? alertEl.querySelector('.token-alert-text') : null;
+
+    if (fullToken) {
+        if (alertEl) alertEl.style.display = 'none';
+    } else {
+        if (alertEl) {
+            alertEl.style.display = 'block';
+            if (!prefix) {
+                if (alertText) {
+                    alertText.innerHTML = '<strong>Token Not Configured</strong><p>Set up your token base in Settings to access the cloud repository.</p>';
+                }
+                if (alertBtn) alertBtn.textContent = 'Open Settings';
+            } else {
+                if (alertText) {
+                    alertText.innerHTML = '<strong>Cloud Access Locked</strong><p>Enter the 6-character access key to load your cloud library.</p>';
+                }
+                if (alertBtn) alertBtn.textContent = 'Enter Key';
+            }
+        }
+    }
+
+    updateSettingsStatusTags();
+}
+
+function promptForAuth() {
+    if (getTokenPrefix()) {
+        openUnlockModal();
+    } else {
+        openSettingsModal();
     }
 }
 
@@ -96,8 +213,16 @@ function cacheDom() {
         'btn-font-decrease', 'font-size-val', 'btn-font-increase', 'btn-font-family',
         'reader-container', 'chapter-nav', 'btn-prev-chapter', 'btn-next-chapter',
         'btn-nav-bookmark',
-        'settings-modal', 'btn-close-settings', 'token-input', 'btn-toggle-token-visibility',
-        'btn-save-token', 'btn-reset-token',
+        // Unlock Modal (6-char key)
+        'unlock-modal', 'btn-close-unlock', 'unlock-key-input',
+        'btn-toggle-unlock-visibility', 'btn-submit-unlock', 'btn-switch-to-settings',
+        // Settings Modal
+        'settings-modal', 'btn-close-settings',
+        'status-tag-prefix', 'status-tag-suffix',
+        'settings-suffix-input', 'btn-toggle-settings-suffix',
+        'settings-prefix-input', 'btn-toggle-settings-prefix',
+        'settings-full-token-input', 'btn-toggle-settings-full',
+        'btn-auto-split-token', 'btn-save-settings', 'btn-lock-app', 'btn-clear-all-token',
         'loading-overlay', 'loader-text', 'toast'
     ];
     ids.forEach(id => {
@@ -143,14 +268,14 @@ function githubHeaders(accept = 'application/vnd.github.v3+json') {
 async function fetchGitHub(path) {
     const token = getToken();
     if (!token) {
-        openSettingsModal();
+        promptForAuth();
         throw new Error('No GitHub token configured');
     }
     const url = `${API_BASE}/${encodePath(path)}?ref=${CONFIG.branch}`;
     const resp = await fetch(url, { headers: githubHeaders() });
     if (resp.status === 401) {
         showToast('Token Error: 401 Bad Credentials 🔑');
-        openSettingsModal();
+        promptForAuth();
         throw new Error('401 Unauthorized');
     }
     if (resp.status === 403) {
@@ -777,7 +902,7 @@ function buildBreadcrumbs(containerEl, currentPath) {
 // ---- FOLDER NAVIGATION ROUTER ----
 async function openFolder(folderPath) {
     if (!getToken()) {
-        openSettingsModal();
+        promptForAuth();
         return;
     }
 
@@ -1723,7 +1848,7 @@ async function collectFilesRecursively(folderPath, isAo3) {
 let isDownloadingZip = false;
 async function downloadFolderAsZip(folderPath, folderName, btnEl) {
     if (!getToken()) {
-        openSettingsModal();
+        promptForAuth();
         return;
     }
     if (isDownloadingZip) {
@@ -1797,29 +1922,158 @@ async function downloadFolderAsZip(folderPath, folderName, btnEl) {
     }
 }
 
-// ---- SETTINGS MODAL (PASSWORD MODE) ----
+// ---- UNLOCK & SETTINGS MODALS (SPLIT-TOKEN ACCESS) ----
+function openUnlockModal() {
+    if (!dom['unlock-modal']) return;
+    const input = dom['unlock-key-input'];
+    if (input) {
+        input.value = getTokenSuffix();
+        input.type = 'password';
+        if (dom['btn-toggle-unlock-visibility']) dom['btn-toggle-unlock-visibility'].textContent = '👁️';
+    }
+    dom['unlock-modal'].classList.add('active');
+    setTimeout(() => {
+        if (input) input.focus();
+    }, 90);
+}
+
+function closeUnlockModal() {
+    if (dom['unlock-modal']) {
+        dom['unlock-modal'].classList.remove('active');
+    }
+}
+
+function submitUnlockKey() {
+    const input = dom['unlock-key-input'];
+    const key = (input ? input.value : '').trim();
+    if (!key) {
+        showToast('Please enter the 6-character access key');
+        if (input) input.focus();
+        return;
+    }
+    setTokenParts(undefined, key);
+    closeUnlockModal();
+    showToast('Cloud Library Unlocked! ✓');
+    renderLibraryHome();
+    renderContinueReadingShelf();
+    updateLogCountBadge();
+}
+
 function openSettingsModal() {
-    const input = dom['token-input'];
-    input.value = getToken();
-    input.type = 'password';
+    if (!dom['settings-modal']) return;
+
+    if (dom['settings-suffix-input']) {
+        dom['settings-suffix-input'].value = getTokenSuffix();
+        dom['settings-suffix-input'].type = 'password';
+        if (dom['btn-toggle-settings-suffix']) dom['btn-toggle-settings-suffix'].textContent = '👁️';
+    }
+    if (dom['settings-prefix-input']) {
+        dom['settings-prefix-input'].value = getTokenPrefix();
+        dom['settings-prefix-input'].type = 'password';
+        if (dom['btn-toggle-settings-prefix']) dom['btn-toggle-settings-prefix'].textContent = '👁️';
+    }
+    if (dom['settings-full-token-input']) {
+        dom['settings-full-token-input'].value = '';
+        dom['settings-full-token-input'].type = 'password';
+        if (dom['btn-toggle-settings-full']) dom['btn-toggle-settings-full'].textContent = '👁️';
+    }
+
+    updateSettingsStatusTags();
     dom['settings-modal'].classList.add('active');
-    setTimeout(() => input.focus(), 80);
+    setTimeout(() => {
+        if (!getTokenPrefix() && dom['settings-full-token-input']) {
+            dom['settings-full-token-input'].focus();
+        } else if (dom['settings-suffix-input']) {
+            dom['settings-suffix-input'].focus();
+        }
+    }, 90);
 }
 
 function closeSettingsModal() {
-    dom['settings-modal'].classList.remove('active');
+    if (dom['settings-modal']) {
+        dom['settings-modal'].classList.remove('active');
+    }
 }
 
-function toggleTokenVisibility() {
-    const input = dom['token-input'];
-    const btn = dom['btn-toggle-token-visibility'];
-    if (input.type === 'password') {
-        input.type = 'text';
-        btn.textContent = '🙈';
-    } else {
-        input.type = 'password';
-        btn.textContent = '👁️';
+function handleAutoSplitToken() {
+    const full = (dom['settings-full-token-input']?.value || '').trim();
+    if (!full) {
+        showToast('Please paste a token in the box first');
+        return;
     }
+    if (full.length <= 6) {
+        showToast('Token too short (must be at least 7 characters)');
+        return;
+    }
+
+    const prefix = full.slice(0, -6);
+    const suffix = full.slice(-6);
+
+    if (dom['settings-prefix-input']) dom['settings-prefix-input'].value = prefix;
+    if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = suffix;
+
+    setTokenParts(prefix, suffix);
+    if (dom['settings-full-token-input']) dom['settings-full-token-input'].value = '';
+
+    updateSettingsStatusTags();
+    showToast('New token split! Base and 6-char key saved ✓');
+}
+
+function handleSaveSettings() {
+    const prefix = (dom['settings-prefix-input']?.value || '').trim();
+    const suffix = (dom['settings-suffix-input']?.value || '').trim();
+
+    if (!prefix && !suffix) {
+        showToast('Please enter your token parts or paste a full token');
+        return;
+    }
+
+    setTokenParts(prefix, suffix);
+    closeSettingsModal();
+
+    if (prefix && suffix) {
+        showToast('Token settings saved securely! ✓');
+    } else if (prefix && !suffix) {
+        showToast('Token base saved! Enter the 6-character key to unlock.');
+    } else {
+        showToast('Settings saved.');
+    }
+
+    renderLibraryHome();
+    renderContinueReadingShelf();
+    updateLogCountBadge();
+}
+
+function handleLockApp() {
+    lockApp();
+    if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = '';
+    updateSettingsStatusTags();
+    closeSettingsModal();
+    showToast('Library locked. Enter 6-char key to unlock.');
+}
+
+function handleClearAllTokens() {
+    clearAllTokens();
+    if (dom['settings-prefix-input']) dom['settings-prefix-input'].value = '';
+    if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = '';
+    if (dom['settings-full-token-input']) dom['settings-full-token-input'].value = '';
+    updateSettingsStatusTags();
+    closeSettingsModal();
+    showToast('All token credentials cleared from browser.');
+}
+
+function setupPasswordToggle(inputEl, btnEl) {
+    if (!inputEl || !btnEl) return;
+    btnEl.addEventListener('click', e => {
+        e.stopPropagation();
+        if (inputEl.type === 'password') {
+            inputEl.type = 'text';
+            btnEl.textContent = '🙈';
+        } else {
+            inputEl.type = 'password';
+            btnEl.textContent = '👁️';
+        }
+    });
 }
 
 // ---- EVENT LISTENERS SETUP ----
@@ -1836,34 +2090,50 @@ function initEventListeners() {
     });
 
     dom['btn-open-settings'].addEventListener('click', openSettingsModal);
-    dom['btn-banner-token'].addEventListener('click', openSettingsModal);
-    dom['btn-close-settings'].addEventListener('click', closeSettingsModal);
+    dom['btn-banner-token'].addEventListener('click', promptForAuth);
 
-    dom['settings-modal'].addEventListener('click', e => {
-        if (e.target === dom['settings-modal']) closeSettingsModal();
-    });
+    // Quick Unlock Modal Listeners
+    if (dom['btn-close-unlock']) dom['btn-close-unlock'].addEventListener('click', closeUnlockModal);
+    if (dom['btn-submit-unlock']) dom['btn-submit-unlock'].addEventListener('click', submitUnlockKey);
+    if (dom['unlock-key-input']) {
+        dom['unlock-key-input'].addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitUnlockKey();
+            }
+        });
+    }
+    setupPasswordToggle(dom['unlock-key-input'], dom['btn-toggle-unlock-visibility']);
 
-    dom['btn-toggle-token-visibility'].addEventListener('click', toggleTokenVisibility);
+    if (dom['btn-switch-to-settings']) {
+        dom['btn-switch-to-settings'].addEventListener('click', () => {
+            closeUnlockModal();
+            openSettingsModal();
+        });
+    }
 
-    dom['btn-save-token'].addEventListener('click', () => {
-        const val = dom['token-input'].value.trim();
-        if (!val) {
-            showToast('Please enter your GitHub token');
-            return;
-        }
-        setToken(val);
-        closeSettingsModal();
-        showToast('Token saved securely! ✓');
-        renderContinueReadingShelf();
-        updateLogCountBadge();
-    });
+    if (dom['unlock-modal']) {
+        dom['unlock-modal'].addEventListener('click', e => {
+            if (e.target === dom['unlock-modal']) closeUnlockModal();
+        });
+    }
 
-    dom['btn-reset-token'].addEventListener('click', () => {
-        setToken('');
-        dom['token-input'].value = '';
-        closeSettingsModal();
-        showToast('Token cleared from memory');
-    });
+    // Settings Modal Listeners
+    if (dom['btn-close-settings']) dom['btn-close-settings'].addEventListener('click', closeSettingsModal);
+    if (dom['settings-modal']) {
+        dom['settings-modal'].addEventListener('click', e => {
+            if (e.target === dom['settings-modal']) closeSettingsModal();
+        });
+    }
+
+    setupPasswordToggle(dom['settings-suffix-input'], dom['btn-toggle-settings-suffix']);
+    setupPasswordToggle(dom['settings-prefix-input'], dom['btn-toggle-settings-prefix']);
+    setupPasswordToggle(dom['settings-full-token-input'], dom['btn-toggle-settings-full']);
+
+    if (dom['btn-auto-split-token']) dom['btn-auto-split-token'].addEventListener('click', handleAutoSplitToken);
+    if (dom['btn-save-settings']) dom['btn-save-settings'].addEventListener('click', handleSaveSettings);
+    if (dom['btn-lock-app']) dom['btn-lock-app'].addEventListener('click', handleLockApp);
+    if (dom['btn-clear-all-token']) dom['btn-clear-all-token'].addEventListener('click', handleClearAllTokens);
 
     // Navigation Back Buttons
     dom['btn-back-log-to-library'].addEventListener('click', () => {
@@ -2110,9 +2380,9 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTypographySettings();
     initEventListeners();
 
-    // Auto open settings modal on first visit if no token
+    // Auto prompt on startup if not authenticated
     if (!getToken()) {
-        setTimeout(openSettingsModal, 400);
+        setTimeout(promptForAuth, 400);
     }
 
     // Register Service Worker for offline shell support

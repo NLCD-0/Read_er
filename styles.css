@@ -1590,6 +1590,121 @@ body {
     color: #ffffff;
 }
 
+.modal-btn-danger {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.modal-btn-danger:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.modal-compact {
+    max-width: 360px;
+}
+
+.modal-desc {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.input-pin {
+    text-align: center;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    font-size: 1.15rem;
+}
+
+.modal-footer-link {
+    text-align: center;
+    margin-top: 14px;
+}
+
+.btn-text-muted {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.btn-text-muted:hover {
+    color: var(--accent);
+}
+
+.setting-field {
+    margin-bottom: 16px;
+}
+
+.token-status-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.token-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.status-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+}
+
+.status-tag.active {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-tag.missing {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-gold);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.token-update-box {
+    background: rgba(124, 91, 245, 0.08);
+    border: 1px dashed rgba(124, 91, 245, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+}
+
+.btn-secondary-action {
+    width: 100%;
+    margin-top: 10px;
+    background: rgba(124, 91, 245, 0.15);
+    border: 1px solid var(--accent);
+    color: #ffffff;
+    padding: 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary-action:hover {
+    background: var(--accent);
+}
+
 /* ============================================
    LOADING & TOAST OVERLAYS
    ============================================ */
