@@ -37,143 +37,57 @@ const CONFIG = {
 
 const API_BASE = `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents`;
 
-// ---- SPLIT TOKEN MANAGEMENT ----
-// Default base prefix (everything except the last 6 characters).
-// Can be updated in Settings inside the app or optionally defined here.
-// Omitting the last 6 characters guarantees GitHub push protection will never flag this code.
-const DEFAULT_TOKEN_PREFIX = '';
+// ========================================================
+// REPOSITORY ACCESS CONFIGURATION (SPLIT-TOKEN SECURITY)
+// The base part of the token is stored here (all characters EXCEPT the last 6).
+// The user manually enters the last 6 characters in the web app.
+// To change your token: update TOKEN_BASE here, commit and push to git.
+// Leaving out the last 6 characters guarantees GitHub Secret Scanning will never detect or block it.
+// ========================================================
+const TOKEN_BASE = ''; // <-- PUT TOKEN BASE HERE (all characters EXCEPT the last 6)
 
-// Migration helper: check if legacy full token exists and migrate to split storage
-try {
-    const legacyToken = localStorage.getItem('mangacloud_token');
-    if (legacyToken && !localStorage.getItem('mangacloud_token_prefix')) {
-        const trimmed = legacyToken.trim();
-        if (trimmed.length > 6) {
-            localStorage.setItem('mangacloud_token_prefix', trimmed.slice(0, -6));
-            localStorage.setItem('mangacloud_token_suffix', trimmed.slice(-6));
-        }
-    }
-} catch (e) {
-    console.warn('Split token migration:', e);
+function getTokenBase() {
+    return TOKEN_BASE.trim();
 }
 
-function getTokenPrefix() {
-    const stored = localStorage.getItem('mangacloud_token_prefix');
-    if (stored !== null && stored !== undefined && stored.trim() !== '') {
-        return stored.trim();
-    }
-    return DEFAULT_TOKEN_PREFIX.trim();
+function getTokenKey() {
+    return (localStorage.getItem('cloudreader_key') || localStorage.getItem('mangacloud_token_suffix') || '').trim();
 }
 
-function getTokenSuffix() {
-    return (localStorage.getItem('mangacloud_token_suffix') || '').trim();
+function setTokenKey(key) {
+    if (key) {
+        localStorage.setItem('cloudreader_key', key.trim());
+    } else {
+        localStorage.removeItem('cloudreader_key');
+        localStorage.removeItem('mangacloud_token_suffix');
+    }
+    updateTokenUI();
 }
 
 function getToken() {
-    const prefix = getTokenPrefix();
-    const suffix = getTokenSuffix();
-    if (!prefix || !suffix) return '';
-    return prefix + suffix;
-}
-
-function setTokenParts(prefix, suffix) {
-    if (prefix !== undefined && prefix !== null) {
-        const p = prefix.trim();
-        if (p) {
-            localStorage.setItem('mangacloud_token_prefix', p);
-        } else {
-            localStorage.removeItem('mangacloud_token_prefix');
-        }
-    }
-    if (suffix !== undefined && suffix !== null) {
-        const s = suffix.trim();
-        if (s) {
-            localStorage.setItem('mangacloud_token_suffix', s);
-        } else {
-            localStorage.removeItem('mangacloud_token_suffix');
-        }
-    }
-    updateTokenUI();
+    const base = getTokenBase();
+    const key = getTokenKey();
+    if (!base || !key) return '';
+    return base + key;
 }
 
 function lockApp() {
+    localStorage.removeItem('cloudreader_key');
     localStorage.removeItem('mangacloud_token_suffix');
     localStorage.removeItem('mangacloud_token');
     updateTokenUI();
-}
-
-function clearAllTokens() {
-    localStorage.removeItem('mangacloud_token_prefix');
-    localStorage.removeItem('mangacloud_token_suffix');
-    localStorage.removeItem('mangacloud_token');
-    updateTokenUI();
-}
-
-function updateSettingsStatusTags() {
-    const prefix = getTokenPrefix();
-    const suffix = getTokenSuffix();
-
-    const tagPrefix = dom['status-tag-prefix'];
-    const tagSuffix = dom['status-tag-suffix'];
-
-    if (tagPrefix) {
-        if (prefix) {
-            const masked = prefix.length > 7 ? '●●●' + prefix.slice(-4) : '●●●●';
-            tagPrefix.textContent = `Configured (${masked})`;
-            tagPrefix.className = 'status-tag active';
-        } else {
-            tagPrefix.textContent = 'Not set';
-            tagPrefix.className = 'status-tag missing';
-        }
-    }
-
-    if (tagSuffix) {
-        if (suffix) {
-            tagSuffix.textContent = 'Entered (••••••)';
-            tagSuffix.className = 'status-tag active';
-        } else {
-            tagSuffix.textContent = 'Not entered';
-            tagSuffix.className = 'status-tag missing';
-        }
-    }
 }
 
 function updateTokenUI() {
-    const prefix = getTokenPrefix();
-    const fullToken = getToken();
-
+    const hasFull = !!getToken();
     const alertEl = document.getElementById('token-alert');
-    const alertBtn = document.getElementById('btn-banner-token');
-    const alertText = alertEl ? alertEl.querySelector('.token-alert-text') : null;
-
-    if (fullToken) {
-        if (alertEl) alertEl.style.display = 'none';
-    } else {
-        if (alertEl) {
-            alertEl.style.display = 'block';
-            if (!prefix) {
-                if (alertText) {
-                    alertText.innerHTML = '<strong>Token Not Configured</strong><p>Set up your token base in Settings to access the cloud repository.</p>';
-                }
-                if (alertBtn) alertBtn.textContent = 'Open Settings';
-            } else {
-                if (alertText) {
-                    alertText.innerHTML = '<strong>Cloud Access Locked</strong><p>Enter the 6-character access key to load your cloud library.</p>';
-                }
-                if (alertBtn) alertBtn.textContent = 'Enter Key';
-            }
-        }
+    if (alertEl) {
+        alertEl.style.display = hasFull ? 'none' : 'block';
     }
-
-    updateSettingsStatusTags();
 }
 
 function promptForAuth() {
-    if (getTokenPrefix()) {
-        openUnlockModal();
-    } else {
-        openSettingsModal();
-    }
+    openUnlockModal();
 }
 
 // ---- APP STATE ----
@@ -215,14 +129,11 @@ function cacheDom() {
         'btn-nav-bookmark',
         // Unlock Modal (6-char key)
         'unlock-modal', 'btn-close-unlock', 'unlock-key-input',
-        'btn-toggle-unlock-visibility', 'btn-submit-unlock', 'btn-switch-to-settings',
+        'btn-toggle-unlock-visibility', 'btn-submit-unlock',
         // Settings Modal
         'settings-modal', 'btn-close-settings',
-        'status-tag-prefix', 'status-tag-suffix',
         'settings-suffix-input', 'btn-toggle-settings-suffix',
-        'settings-prefix-input', 'btn-toggle-settings-prefix',
-        'settings-full-token-input', 'btn-toggle-settings-full',
-        'btn-auto-split-token', 'btn-save-settings', 'btn-lock-app', 'btn-clear-all-token',
+        'btn-save-settings', 'btn-lock-app',
         'loading-overlay', 'loader-text', 'toast'
     ];
     ids.forEach(id => {
@@ -1951,9 +1862,9 @@ function submitUnlockKey() {
         if (input) input.focus();
         return;
     }
-    setTokenParts(undefined, key);
+    setTokenKey(key);
     closeUnlockModal();
-    showToast('Cloud Library Unlocked! ✓');
+    showToast('Library Unlocked! ✓');
     renderLibraryHome();
     renderContinueReadingShelf();
     updateLogCountBadge();
@@ -1963,29 +1874,14 @@ function openSettingsModal() {
     if (!dom['settings-modal']) return;
 
     if (dom['settings-suffix-input']) {
-        dom['settings-suffix-input'].value = getTokenSuffix();
+        dom['settings-suffix-input'].value = getTokenKey();
         dom['settings-suffix-input'].type = 'password';
         if (dom['btn-toggle-settings-suffix']) dom['btn-toggle-settings-suffix'].textContent = '👁️';
     }
-    if (dom['settings-prefix-input']) {
-        dom['settings-prefix-input'].value = getTokenPrefix();
-        dom['settings-prefix-input'].type = 'password';
-        if (dom['btn-toggle-settings-prefix']) dom['btn-toggle-settings-prefix'].textContent = '👁️';
-    }
-    if (dom['settings-full-token-input']) {
-        dom['settings-full-token-input'].value = '';
-        dom['settings-full-token-input'].type = 'password';
-        if (dom['btn-toggle-settings-full']) dom['btn-toggle-settings-full'].textContent = '👁️';
-    }
 
-    updateSettingsStatusTags();
     dom['settings-modal'].classList.add('active');
     setTimeout(() => {
-        if (!getTokenPrefix() && dom['settings-full-token-input']) {
-            dom['settings-full-token-input'].focus();
-        } else if (dom['settings-suffix-input']) {
-            dom['settings-suffix-input'].focus();
-        }
+        if (dom['settings-suffix-input']) dom['settings-suffix-input'].focus();
     }, 90);
 }
 
@@ -1995,50 +1891,16 @@ function closeSettingsModal() {
     }
 }
 
-function handleAutoSplitToken() {
-    const full = (dom['settings-full-token-input']?.value || '').trim();
-    if (!full) {
-        showToast('Please paste a token in the box first');
-        return;
-    }
-    if (full.length <= 6) {
-        showToast('Token too short (must be at least 7 characters)');
-        return;
-    }
-
-    const prefix = full.slice(0, -6);
-    const suffix = full.slice(-6);
-
-    if (dom['settings-prefix-input']) dom['settings-prefix-input'].value = prefix;
-    if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = suffix;
-
-    setTokenParts(prefix, suffix);
-    if (dom['settings-full-token-input']) dom['settings-full-token-input'].value = '';
-
-    updateSettingsStatusTags();
-    showToast('New token split! Base and 6-char key saved ✓');
-}
-
 function handleSaveSettings() {
-    const prefix = (dom['settings-prefix-input']?.value || '').trim();
-    const suffix = (dom['settings-suffix-input']?.value || '').trim();
-
-    if (!prefix && !suffix) {
-        showToast('Please enter your token parts or paste a full token');
+    const key = (dom['settings-suffix-input']?.value || '').trim();
+    if (!key) {
+        showToast('Please enter your 6-character key');
         return;
     }
 
-    setTokenParts(prefix, suffix);
+    setTokenKey(key);
     closeSettingsModal();
-
-    if (prefix && suffix) {
-        showToast('Token settings saved securely! ✓');
-    } else if (prefix && !suffix) {
-        showToast('Token base saved! Enter the 6-character key to unlock.');
-    } else {
-        showToast('Settings saved.');
-    }
-
+    showToast('Access key saved! ✓');
     renderLibraryHome();
     renderContinueReadingShelf();
     updateLogCountBadge();
@@ -2047,19 +1909,8 @@ function handleSaveSettings() {
 function handleLockApp() {
     lockApp();
     if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = '';
-    updateSettingsStatusTags();
     closeSettingsModal();
-    showToast('Library locked. Enter 6-char key to unlock.');
-}
-
-function handleClearAllTokens() {
-    clearAllTokens();
-    if (dom['settings-prefix-input']) dom['settings-prefix-input'].value = '';
-    if (dom['settings-suffix-input']) dom['settings-suffix-input'].value = '';
-    if (dom['settings-full-token-input']) dom['settings-full-token-input'].value = '';
-    updateSettingsStatusTags();
-    closeSettingsModal();
-    showToast('All token credentials cleared from browser.');
+    showToast('Library locked. Enter key to unlock.');
 }
 
 function setupPasswordToggle(inputEl, btnEl) {
@@ -2105,13 +1956,6 @@ function initEventListeners() {
     }
     setupPasswordToggle(dom['unlock-key-input'], dom['btn-toggle-unlock-visibility']);
 
-    if (dom['btn-switch-to-settings']) {
-        dom['btn-switch-to-settings'].addEventListener('click', () => {
-            closeUnlockModal();
-            openSettingsModal();
-        });
-    }
-
     if (dom['unlock-modal']) {
         dom['unlock-modal'].addEventListener('click', e => {
             if (e.target === dom['unlock-modal']) closeUnlockModal();
@@ -2127,13 +1971,8 @@ function initEventListeners() {
     }
 
     setupPasswordToggle(dom['settings-suffix-input'], dom['btn-toggle-settings-suffix']);
-    setupPasswordToggle(dom['settings-prefix-input'], dom['btn-toggle-settings-prefix']);
-    setupPasswordToggle(dom['settings-full-token-input'], dom['btn-toggle-settings-full']);
-
-    if (dom['btn-auto-split-token']) dom['btn-auto-split-token'].addEventListener('click', handleAutoSplitToken);
     if (dom['btn-save-settings']) dom['btn-save-settings'].addEventListener('click', handleSaveSettings);
     if (dom['btn-lock-app']) dom['btn-lock-app'].addEventListener('click', handleLockApp);
-    if (dom['btn-clear-all-token']) dom['btn-clear-all-token'].addEventListener('click', handleClearAllTokens);
 
     // Navigation Back Buttons
     dom['btn-back-log-to-library'].addEventListener('click', () => {

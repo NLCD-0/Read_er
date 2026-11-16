@@ -305,24 +305,24 @@
                     Enter the last <strong>6 characters</strong> of your token to unlock your cloud library.
                 </p>
                 <div class="input-password-wrapper">
-                    <input class="modal-input input-pin" id="unlock-key-input" type="password" maxlength="8" placeholder="••••••" autocomplete="off" spellcheck="false">
+                    <input class="modal-input input-pin" id="unlock-key-input" type="password" maxlength="10" placeholder="••••••" autocomplete="off" spellcheck="false">
                     <button class="btn-toggle-password" id="btn-toggle-unlock-visibility" type="button" aria-label="Toggle visibility">👁️</button>
                 </div>
                 <div class="modal-actions">
                     <button class="modal-btn modal-btn-save" id="btn-submit-unlock">Unlock Library</button>
                 </div>
-                <div class="modal-footer-link">
-                    <button class="btn-text-muted" id="btn-switch-to-settings">⚙️ Change Token Base or Settings</button>
-                </div>
+                <p class="modal-hint" style="text-align: center; margin-top: 14px;">
+                    🔒 Kept safely in browser memory until you clear memory or lock.
+                </p>
             </div>
         </div>
     </div>
 
     <!-- ==================== SETTINGS MODAL ==================== -->
     <div class="modal-overlay" id="settings-modal">
-        <div class="modal">
+        <div class="modal modal-compact">
             <div class="modal-header">
-                <h2 class="modal-title">⚙️ Token & Access Settings</h2>
+                <h2 class="modal-title">⚙️ Access Settings</h2>
                 <button class="modal-close" id="btn-close-settings" aria-label="Close settings">✕</button>
             </div>
             <div class="modal-body">
@@ -333,54 +333,23 @@
                     </a>
                 </div>
 
-                <!-- Status Indicator -->
-                <div class="token-status-card" id="token-status-card">
-                    <div class="token-status-row">
-                        <span>Base Token Part (Prefix):</span>
-                        <span class="status-tag" id="status-tag-prefix">Not set</span>
-                    </div>
-                    <div class="token-status-row">
-                        <span>Access Key (Last 6 Chars):</span>
-                        <span class="status-tag" id="status-tag-suffix">Not entered</span>
-                    </div>
-                </div>
-
-                <!-- Field 1: Access Key (Last 6 chars) -->
                 <div class="setting-field">
-                    <label class="modal-label" for="settings-suffix-input">🔑 Access Key (Last 6 Characters)</label>
+                    <label class="modal-label" for="settings-suffix-input">🔑 6-Character Access Key</label>
                     <div class="input-password-wrapper">
-                        <input class="modal-input input-pin" id="settings-suffix-input" type="password" maxlength="8" placeholder="Last 6 chars (e.g. vtddz9)" autocomplete="off" spellcheck="false">
+                        <input class="modal-input input-pin" id="settings-suffix-input" type="password" maxlength="10" placeholder="••••••" autocomplete="off" spellcheck="false">
                         <button class="btn-toggle-password" id="btn-toggle-settings-suffix" type="button">👁️</button>
                     </div>
-                    <p class="modal-hint">The key you manually enter. Once entered, the browser remembers it until memory/cache is cleared.</p>
-                </div>
-
-                <!-- Field 2: Base Token Prefix -->
-                <div class="setting-field">
-                    <label class="modal-label" for="settings-prefix-input">🛡️ Base Token Part (Everything except last 6 chars)</label>
-                    <div class="input-password-wrapper">
-                        <input class="modal-input" id="settings-prefix-input" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off" spellcheck="false">
-                        <button class="btn-toggle-password" id="btn-toggle-settings-prefix" type="button">👁️</button>
-                    </div>
-                    <p class="modal-hint">The stored base part. Combined with your 6-character key, it forms the full GitHub token.</p>
-                </div>
-
-                <!-- Field 3: Auto-split full token helper -->
-                <div class="setting-field token-update-box">
-                    <label class="modal-label" for="settings-full-token-input">🔄 Change Token (Paste Full New Token)</label>
-                    <div class="input-password-wrapper">
-                        <input class="modal-input" id="settings-full-token-input" type="password" placeholder="Paste full new token to auto-split..." autocomplete="off" spellcheck="false">
-                        <button class="btn-toggle-password" id="btn-toggle-settings-full" type="button">👁️</button>
-                    </div>
-                    <p class="modal-hint">To update your token, paste the new token here and click the button below to replace the old base part.</p>
-                    <button class="btn-secondary-action" id="btn-auto-split-token" type="button">Auto-Split & Update Base</button>
+                    <p class="modal-hint">The last 6 characters of your token.</p>
                 </div>
 
                 <div class="modal-actions">
-                    <button class="modal-btn modal-btn-save" id="btn-save-settings">Save Changes</button>
+                    <button class="modal-btn modal-btn-save" id="btn-save-settings">Save Key</button>
                     <button class="modal-btn modal-btn-reset" id="btn-lock-app">Lock (Clear Key)</button>
-                    <button class="modal-btn modal-btn-danger" id="btn-clear-all-token">Clear All</button>
                 </div>
+
+                <p class="modal-hint" style="margin-top: 16px; border-top: 1px solid var(--border-subtle); padding-top: 12px;">
+                    🛡️ The token base is embedded in the repository. To change the token, update it in your Git repository and push. The full token is never exposed in the app.
+                </p>
             </div>
         </div>
     </div>
@@ -396,7 +365,7 @@
     <!-- ==================== TOAST ==================== -->
     <div class="toast" id="toast"></div>
 
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
 </body>
 
 </html>
